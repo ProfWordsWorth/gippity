@@ -2,3 +2,4 @@ pytest
 ruff
 mypy
 requests
+flask
