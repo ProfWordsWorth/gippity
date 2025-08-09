@@ -31,7 +31,7 @@ def test_default_provider_uses_fake_llm(monkeypatch) -> None:
     assert "<<" not in html and ">>" not in html
 
 
-def test_ollama_provider(monkeypatch) -> None:
+def test_ollama_provider_offline(monkeypatch) -> None:
     outputs = [
         "reflection",
         '{"title": "T", "artist": "A", "year": "2000", "image_url": "https://upload.wikimedia.org/x.jpg"}',
@@ -72,6 +72,7 @@ def test_post_run_injects_metadata(monkeypatch) -> None:
     client = app.test_client()
     resp = client.post("/run", data={"date": "2024-05-04"})
     html = resp.get_data(as_text=True)
+    assert resp.headers["Content-Type"] == "text/html; charset=utf-8"
     assert "Current Date" not in html
     assert "Cover Title" not in html
     assert "Cover Artist" not in html

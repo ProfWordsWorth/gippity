@@ -47,3 +47,6 @@ python -m lectio_plus.app --serve
 Tests run entirely offline and do not require network access.  The
 `LLM_PROVIDER`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` variables are optional
 and only needed when experimenting with Ollama.
+
+Ollama uses the OpenAI-compatible Chat Completions API while the OpenAI cloud
+provider uses the Responses API.
