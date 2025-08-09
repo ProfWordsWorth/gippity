@@ -1,6 +1,8 @@
 """Content curation helpers."""
 
 from collections.abc import Iterable
+import json
+import re
 
 import requests  # type: ignore[import-untyped]
 
@@ -8,6 +10,39 @@ import requests  # type: ignore[import-untyped]
 def curate(parts: Iterable[str]) -> str:
     """Join ``parts`` with newlines."""
     return "\n".join(parts)
+
+
+def parse_art_json(raw: str) -> dict:
+    """Parse and validate ``raw`` JSON describing a work of art.
+
+    Code fences are stripped before parsing.  The resulting object must contain
+    non-empty string values for the keys ``title``, ``artist``, ``year`` and
+    ``image_url``.  The ``image_url`` must begin with the Wikimedia upload
+    domain.  :class:`ValueError` is raised on failure.
+    """
+
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = text.rsplit("```", 1)[0].strip()
+
+    try:
+        data = json.loads(text)
+    except Exception as exc:  # pragma: no cover - deliberately broad
+        raise ValueError("invalid JSON") from exc
+
+    required = ["title", "artist", "year", "image_url"]
+    result: dict[str, str] = {}
+    for key in required:
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("missing fields in art JSON")
+        result[key] = value.strip()
+
+    if not result["image_url"].startswith("https://upload.wikimedia.org/"):
+        raise ValueError("image_url must be a Wikimedia upload URL")
+
+    return result
 
 
 def ensure_upload_wikimedia_url(
@@ -46,4 +81,4 @@ def ensure_upload_wikimedia_url(
     return url
 
 
-__all__ = ["curate", "ensure_upload_wikimedia_url"]
+__all__ = ["curate", "parse_art_json", "ensure_upload_wikimedia_url"]

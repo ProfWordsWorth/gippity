@@ -21,3 +21,24 @@ src/
     ├── prompts.py
     └── scrape.py
 ```
+
+## LLM providers
+
+Offline (default):
+
+```
+LLM_PROVIDER not set → FakeLLM
+```
+
+Ollama:
+
+```
+export LLM_PROVIDER=ollama
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export OPENAI_API_KEY=ollama
+export REFLECTION_MODEL=deepseek-r1:14b
+export ART_MODEL=mistral:latest
+export HTML_MODEL=mistral:latest
+
+python -m lectio_plus.app --serve
+```

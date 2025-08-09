@@ -4,6 +4,7 @@ from pathlib import Path
 import importlib
 import sys
 
+import pytest
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -77,4 +78,22 @@ def test_ensure_upload_wikimedia_url_uses_real_requests() -> None:
     real_requests = importlib.import_module("requests")
     assert curator.requests is real_requests
     assert "site-packages" in Path(real_requests.__file__).parts
+
+
+def test_parse_art_json_validation() -> None:
+    good = (
+        '{"title": "T", "artist": "A", "year": "1", '
+        '"image_url": "https://upload.wikimedia.org/x.jpg"}'
+    )
+    assert curator.parse_art_json(good)["title"] == "T"
+
+    bad_texts = [
+        "not json",
+        '{"title": "", "artist": "A", "year": "1", "image_url": "https://upload.wikimedia.org/x.jpg"}',
+        '{"title": "T", "artist": "A", "year": "1", "image_url": "https://example.com/x.jpg"}',
+        '{"title": "T", "artist": "A"}',
+    ]
+    for bad in bad_texts:
+        with pytest.raises(ValueError):
+            curator.parse_art_json(bad)
 
