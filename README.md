@@ -6,6 +6,7 @@
 2. Run the linters: `ruff check .`
 3. Run the type checker: `mypy src`
 4. Run the tests: `pytest -q`
+5. Start the web server: `python -m lectio_plus.app --serve`
 
 ## Package layout
 
@@ -42,3 +43,7 @@ export HTML_MODEL=mistral:latest
 
 python -m lectio_plus.app --serve
 ```
+
+Tests run entirely offline and do not require network access.  The
+`LLM_PROVIDER`, `OPENAI_BASE_URL` and `OPENAI_API_KEY` variables are optional
+and only needed when experimenting with Ollama.
