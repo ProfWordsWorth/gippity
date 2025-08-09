@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Iterable, Protocol
 
-from flask import Flask, Response, request  # type: ignore[import-not-found]
+from flask import Flask, request  # type: ignore[import-not-found]
 
 from . import prompts
 from .curator import curate, parse_art_json
@@ -71,6 +71,29 @@ class OpenAILLM:
             api_key=self._api_key,
             timeout=10.0,
         )
+
+        provider = os.environ.get("LLM_PROVIDER")
+        base_url = os.environ.get("OPENAI_BASE_URL") or self._base_url or ""
+        is_ollama = (
+            provider == "ollama"
+            or base_url.startswith("http://localhost:11434")
+            or base_url.startswith("https://localhost:11434")
+        )
+
+        if is_ollama:
+            kwargs: dict[str, object] = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            resp = client.chat.completions.create(**kwargs)
+            return resp.choices[0].message.content
+
         resp = client.responses.create(
             model=model,
             input=prompt,
@@ -152,7 +175,7 @@ def create_app(*, default_date: str | None = None) -> Flask:
         )
 
     @app.post("/run")
-    def run_route() -> Response:
+    def run_route() -> tuple[str, int, dict[str, str]]:
         date_str = request.form.get("date") or app.config.get("DEFAULT_DATE")
         if not date_str:
             date_str = _dt.date.today().isoformat()
@@ -161,7 +184,7 @@ def create_app(*, default_date: str | None = None) -> Flask:
         sample_html = fixture_path.read_text(encoding="utf-8")
         readings_block = parse_usccb_html(sample_html)
         html = run(readings_block, date_str)
-        return Response(html, mimetype="text/html")
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     return app
 
