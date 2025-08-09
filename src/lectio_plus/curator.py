@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 
 def curate(parts: Iterable[str]) -> str:
