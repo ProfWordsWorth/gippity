@@ -81,18 +81,19 @@ class OpenAILLM:
         )
 
         if is_ollama:
+            msgs = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ]
             kwargs: dict[str, object] = {
                 "model": model,
-                "messages": [
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt},
-                ],
+                "messages": msgs,
                 "temperature": temperature,
             }
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
             resp = client.chat.completions.create(**kwargs)
-            return resp.choices[0].message.content
+            return resp.choices[0].message.content or ""
 
         resp = client.responses.create(
             model=model,
