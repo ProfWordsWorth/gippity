@@ -68,24 +68,26 @@ def build_prompt3_html(
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
   <title>Daily Readings – {DATE}</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 0; color: #222; }
-    .page { padding: 24px; max-width: 760px; margin: 0 auto; }
-    .cover { text-align: center; margin-bottom: 24px; }
-    .cover h1 { margin: 0 0 4px; font-size: 28px; }
-    .cover h2 { margin: 0 0 16px; font-weight: 500; font-size: 20px; color: #555; }
-    .figurewrap { margin: 0 auto 8px; }
-    .figurewrap img { max-width: 100%; height: auto; border-radius: 4px; }
-    .caption { font-size: 12px; color: #555; margin-top: 4px; }
-    main.content { margin-top: 12px; }
-    h2 { font-size: 20px; margin: 20px 0 8px; }
-    p { line-height: 1.45; }
-    p.context { color: #333; font-size: 14px; }
-    .reading { white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 8px 10px; border-radius: 4px; }
-    p.exegesis { font-size: 14px; color: #333; }
-    ul.q-list { margin: 6px 0 14px 20px; }
-    ul.q-list li { margin: 4px 0; }
-    hr { border: 0; border-top: 1px solid #ddd; margin: 18px 0; }
-    section.final-reflect { margin-top: 20px; }
+    :root{--text:#222;--muted:#555;--rule:#ddd}
+    @page{margin:18mm}
+    body{margin:0;color:var(--text);}
+    .page{padding:22px;max-width:680px;margin:0 auto;font-family: Georgia, 'Times New Roman', serif;font-size:15px;line-height:1.6}
+    .cover{text-align:center;margin-bottom:24px}
+    .cover h1{margin:0 0 4px;font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;font-size:28px}
+    .cover h2{margin:0 0 14px;font-weight:500;font-size:18px;color:var(--muted)}
+    .figurewrap{margin:0 auto 8px}
+    .figurewrap img{max-width:100%;height:auto;border-radius:3px}
+    .caption{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+    main.content{margin-top:12px}
+    h2{font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;font-size:20px;margin:22px 0 8px}
+    p{margin:10px 0}
+    p.context{color:#333;font-size:14px}
+    .reading{white-space:pre-wrap;background:#fbfbfb;border:1px solid #eee;padding:10px 12px;border-radius:4px}
+    p.exegesis{font-size:14px;color:#333}
+    ul.q-list{margin:6px 0 14px 22px}
+    ul.q-list li{margin:4px 0}
+    hr{border:0;border-top:1px solid var(--rule);margin:18px 0}
+    section.final-reflect{margin-top:20px}
   </style>
 </head>
 <body>

@@ -182,8 +182,8 @@ def parse_usccb_html(html_text: str) -> List[Section]:
     body_lines: List[str] = []
     expecting_citation = False
 
-    # Iterate over tags, capturing h2/h3 and subsequent p tags
-    for tag in container.find_all(["h2", "h3", "p", "div"], recursive=True):
+    # Iterate over tags, capturing h2/h3 and subsequent text blocks
+    for tag in container.find_all(["h2", "h3", "p", "li", "blockquote", "div", "section"], recursive=True):
         name = tag.name or ""
         if name in ("h2", "h3"):
             heading_text = _normalize_heading(tag.get_text(" ", strip=True))
@@ -198,7 +198,7 @@ def parse_usccb_html(html_text: str) -> List[Section]:
             current = Section(heading_text, "", "", is_psalm, is_gospel)
             expecting_citation = True
             continue
-        if name == "p" and current is not None:
+        if name in ("p", "li", "blockquote") and current is not None:
             text = tag.get_text(" ", strip=True)
             if not text:
                 continue
@@ -212,6 +212,9 @@ def parse_usccb_html(html_text: str) -> List[Section]:
         current.text = "\n".join(body_lines).strip()
         sections.append(current)
 
+    # Fallback: if we failed to find recognizable sections, use legacy extractor
+    if not sections or not any(s.is_gospel or s.is_psalm or s.label.lower().startswith("reading") for s in sections):
+        return extract_sections(html_text)
     return sections
 
 
