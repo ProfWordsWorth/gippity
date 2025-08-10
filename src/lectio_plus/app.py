@@ -8,17 +8,22 @@ import os
 from pathlib import Path
 from typing import Any, Iterable, Protocol, cast
 
-from flask import Flask, request  # type: ignore[import-not-found]
+import time
+from flask import Flask, jsonify, request  # type: ignore[import-not-found]
 
 from . import prompts
-from .curator import curate, parse_art_json
+from .curator import (
+    curate,
+    safe_parse_art_json,
+    curator_fallback,
+)
 from .html_build import build_html
 from .parse import parse_usccb_html
 
 
 def _ollama_timeout() -> float:
-    """Return Ollama timeout in seconds (default 120, override via OLLAMA_TIMEOUT)."""
-    return float(os.getenv("OLLAMA_TIMEOUT", "120"))
+    """Return Ollama timeout in seconds (default 180, override via OLLAMA_TIMEOUT)."""
+    return float(os.getenv("OLLAMA_TIMEOUT", "180"))
 
 
 class LLM(Protocol):
@@ -162,7 +167,11 @@ def run(readings_block: str, date_str: str = "DATE") -> str:
 
     prompt2 = prompts.make_prompt2(date_str, readings_block)
     art_raw = llm.generate(art_model, prompt2)
-    art = parse_art_json(art_raw)
+    try:
+        art = safe_parse_art_json(art_raw)
+    except Exception:
+        # Use fallback to be resilient in library use
+        art = curator_fallback()
     art_block = curate([art["title"], art["artist"], art["year"], art["image_url"]])
 
     raw_blocks = stitch_blocks_for_prompt3([reflection, art_block])
@@ -177,6 +186,18 @@ def create_app(*, default_date: str | None = None) -> Flask:
 
     app = Flask(__name__)
     app.config["DEFAULT_DATE"] = default_date
+
+    @app.get("/healthz")
+    def healthz():
+        start = time.perf_counter()
+        try:
+            model = os.getenv("HTML_MODEL", "mistral:latest")
+            llm = get_llm()
+            _ = llm.generate(model, "ping", temperature=0.0, max_tokens=5)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            return jsonify({"ok": True, "model": model, "elapsed_ms": elapsed_ms}), 200
+        except Exception as exc:  # pragma: no cover - deliberately broad
+            return jsonify({"ok": False, "error": str(exc)}), 200
 
     @app.get("/")
     def index() -> str:
@@ -195,10 +216,60 @@ def create_app(*, default_date: str | None = None) -> Flask:
         if not date_str:
             date_str = _dt.date.today().isoformat()
 
-        fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
-        sample_html = fixture_path.read_text(encoding="utf-8")
-        readings_block = parse_usccb_html(sample_html)
-        html = run(readings_block, date_str)
+        try:
+            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+            sample_html = fixture_path.read_text(encoding="utf-8")
+            readings_block = parse_usccb_html(sample_html)
+        except Exception as exc:
+            # If fixture parsing fails, continue with minimal block
+            app.logger.warning("failed to parse fixture: %s", exc)
+            readings_block = ""
+
+        llm = get_llm()
+        reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
+        art_model = os.environ.get("ART_MODEL", "gpt-5-mini")
+        html_model = os.environ.get("HTML_MODEL", "gpt-5-mini")
+
+        # Reflection stage
+        try:
+            prompt1 = prompts.make_prompt1(readings_block)
+            reflection = llm.generate(reflection_model, prompt1)
+        except Exception as exc:
+            app.logger.warning("reflection generation failed: %s", exc)
+            reflection = "A brief reflection is temporarily unavailable."
+
+        # Art stage
+        try:
+            prompt2 = prompts.make_prompt2(date_str, readings_block)
+            art_raw = llm.generate(art_model, prompt2)
+            try:
+                art = safe_parse_art_json(art_raw)
+            except Exception as exc:
+                app.logger.warning(
+                    "art JSON parse failed: %s; raw=%r", exc, (art_raw[:200] if isinstance(art_raw, str) else art_raw)
+                )
+                art = curator_fallback()
+        except Exception as exc:
+            app.logger.warning("art generation failed: %s", exc)
+            art = curator_fallback()
+
+        art_block = curate([art["title"], art["artist"], art["year"], art["image_url"]])
+
+        # HTML stage
+        try:
+            raw_blocks = stitch_blocks_for_prompt3([reflection, art_block])
+            prompt3 = prompts.make_prompt3(date_str, raw_blocks)
+            injected_html = llm.generate(html_model, prompt3)
+        except Exception as exc:
+            app.logger.warning("html generation failed: %s", exc)
+            injected_html = "<section>Content is temporarily unavailable.</section>"
+
+        try:
+            final_html = inject_cover_metadata(injected_html, date_str, art)
+            html = build_html(final_html)
+        except Exception as exc:
+            app.logger.error("final HTML build failed: %s", exc)
+            html = f"<html><body><p>Error: {str(exc)}</p></body></html>"
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     return app

@@ -45,6 +45,53 @@ def parse_art_json(raw: str) -> dict:
     return result
 
 
+def safe_parse_art_json(text: str) -> dict[str, str]:
+    """Parse messy curator JSON and normalize fields.
+
+    - Extract the first JSON object between ``{`` and the last ``}``.
+    - Require string keys: ``title``, ``artist``, ``year``, ``image_url``.
+    - If ``image_url`` is not an upload URL, attempt to resolve via
+      :func:`ensure_upload_wikimedia_url`. If still invalid, raise ``ValueError``.
+    """
+
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if not match:
+        raise ValueError("no JSON object found")
+    obj_text = match.group(0)
+
+    data = json.loads(obj_text)
+    required = ["title", "artist", "year", "image_url"]
+    out: dict[str, str] = {}
+    for key in required:
+        val = data.get(key)
+        if not isinstance(val, str) or not val.strip():
+            raise ValueError("missing fields in art JSON")
+        out[key] = val.strip()
+
+    if not out["image_url"].startswith("https://upload.wikimedia.org/"):
+        resolved = ensure_upload_wikimedia_url(out["image_url"])
+        if not isinstance(resolved, str) or not resolved.startswith(
+            "https://upload.wikimedia.org/"
+        ):
+            raise ValueError("image_url must be a Wikimedia upload URL")
+        out["image_url"] = resolved
+
+    return out
+
+
+def curator_fallback() -> dict[str, str]:
+    """Return a known public-domain artwork as a safe fallback."""
+    return {
+        "title": "The Annunciation",
+        "artist": "Fra Angelico",
+        "year": "c. 1430–1432",
+        "image_url": (
+            "https://upload.wikimedia.org/wikipedia/commons/3/3d/"
+            "Fra_Angelico_-_Annunciation_%28Prado%29.jpg"
+        ),
+    }
+
+
 def ensure_upload_wikimedia_url(
     url: str, *, follow_redirects: bool = True
 ) -> str:
@@ -81,4 +128,10 @@ def ensure_upload_wikimedia_url(
     return url
 
 
-__all__ = ["curate", "parse_art_json", "ensure_upload_wikimedia_url"]
+__all__ = [
+    "curate",
+    "parse_art_json",
+    "safe_parse_art_json",
+    "ensure_upload_wikimedia_url",
+    "curator_fallback",
+]

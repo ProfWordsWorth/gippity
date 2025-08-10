@@ -81,3 +81,21 @@ def test_post_run_injects_metadata(monkeypatch) -> None:
     assert "2024-05-04" in html
     assert "T" in html and "A" in html and "2000" in html
     assert "https://upload.wikimedia.org/x.jpg" in html
+
+
+def test_healthz_ok_with_ollama_monkeypatched(monkeypatch) -> None:
+    def fake_generate(self, model, prompt, temperature=0.2, max_tokens=None):  # noqa: ARG001
+        return "pong"
+
+    monkeypatch.setattr(OpenAILLM, "generate", fake_generate)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "ollama")
+
+    app = create_app()
+    client = app.test_client()
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert isinstance(data, dict)
+    assert data.get("ok") is True
