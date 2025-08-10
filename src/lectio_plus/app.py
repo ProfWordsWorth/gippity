@@ -496,27 +496,55 @@ def create_app(*, default_date: str | None = None) -> Flask:
             except Exception as exc:
                 app.logger.warning("WeasyPrint failed: %s; using reportlab fallback", exc)
                 try:
-                    # Last resort: valid single-page PDF with plain text
-                    from reportlab.lib.pagesizes import letter  # type: ignore
-                    from reportlab.pdfgen import canvas  # type: ignore
+                    # Last resort: multi-page PDF with full text content
                     import io
+                    from reportlab.lib.pagesizes import letter  # type: ignore
+                    from reportlab.lib.units import inch  # type: ignore
+                    from reportlab.lib.styles import getSampleStyleSheet  # type: ignore
+                    from reportlab.platypus import (  # type: ignore
+                        SimpleDocTemplate,
+                        Paragraph,
+                        Spacer,
+                        PageBreak,
+                    )
 
                     buf = io.BytesIO()
-                    c = canvas.Canvas(buf, pagesize=letter)
-                    width, height = letter
-                    c.setFont("Helvetica", 14)
-                    c.drawString(72, height - 72, f"Daily Readings — {date_str}")
-                    c.setFont("Helvetica", 10)
-                    y = height - 96
-                    c.drawString(72, y, "Open the HTML version for full layout and images.")
-                    y -= 18
+                    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch, topMargin=0.75 * inch, bottomMargin=0.75 * inch)
+                    styles = getSampleStyleSheet()
+                    h1 = styles["Heading1"]
+                    h2 = styles["Heading2"]
+                    body = styles["BodyText"]
+                    body.leading = 14
+
+                    story = []
+                    story.append(Paragraph(f"Daily Readings — {date_str}", h1))
                     if isinstance(art, dict) and art.get("title"):
-                        c.drawString(72, y, f"Artwork: {art.get('title')} by {art.get('artist')} ({art.get('year')})")
-                        y -= 18
+                        story.append(Paragraph(f"Artwork: {art.get('title')} by {art.get('artist')} ({art.get('year')})", body))
                     if isinstance(readings_source_url, str) and readings_source_url:
-                        c.drawString(72, y, f"Source: {readings_source_url}")
-                    c.showPage()
-                    c.save()
+                        story.append(Paragraph(f"Source: {readings_source_url}", body))
+                    story.append(Spacer(1, 0.2 * inch))
+
+                    # Use enriched or basic sections already computed above
+                    for sec in sections:
+                        story.append(Paragraph(sec.heading, h2))
+                        text = sec.reading.replace("\n", "<br/>")
+                        story.append(Paragraph(text, body))
+                        if getattr(sec, "context", None):
+                            story.append(Paragraph(f"<b>Context:</b> {sec.context}", body))
+                        if getattr(sec, "exegesis", None):
+                            story.append(Paragraph(f"<b>Exegetical Note:</b> {sec.exegesis}", body))
+                        qs = getattr(sec, "questions", None) or []
+                        if qs:
+                            story.append(Paragraph("<b>Reflection Questions:</b>", body))
+                            for q in qs:
+                                story.append(Paragraph(f"• {q}", body))
+                        story.append(Spacer(1, 0.15 * inch))
+
+                    story.append(PageBreak())
+                    story.append(Paragraph("Final Reflection", h2))
+                    story.append(Paragraph(strip_code_fences(final_reflection).replace("\n", "<br/>"), body))
+
+                    doc.build(story)
                     pdf_bytes = buf.getvalue()
                 except Exception as exc2:
                     app.logger.error("Reportlab fallback failed: %s", exc2)
