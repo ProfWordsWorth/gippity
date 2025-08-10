@@ -3,10 +3,9 @@
 ## Quickstart
 
 1. Install dependencies: `pip install -r requirements.txt`
-2. Run the linters: `ruff check .`
-3. Run the type checker: `mypy src`
-4. Run the tests: `pytest -q`
-5. Start the web server: `python -m lectio_plus.app --serve`
+2. Run all checks: `make check`
+   - Or individually: `make lint`, `make type`, `make test`
+3. Start the web server: `python -m lectio_plus.app --serve`
 
 ## Package layout
 
