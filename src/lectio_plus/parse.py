@@ -184,20 +184,33 @@ def parse_usccb_html(html_text: str) -> List[Section]:
 
     # Iterate over tags, capturing h2/h3 and subsequent text blocks
     from typing import cast, Any
+    def _is_section_heading(h: str) -> bool:
+        hl = h.lower()
+        return (
+            hl.startswith("reading")
+            or hl.startswith("first reading")
+            or hl.startswith("second reading")
+            or hl.startswith("third reading")
+            or hl.startswith("responsorial psalm")
+            or hl.startswith("gospel")
+            or hl.startswith("sequence")
+        )
+
     for tag in cast(Any, container).find_all(["h2", "h3", "p", "li", "blockquote", "div", "section"], recursive=True):
         name = tag.name or ""
         if name in ("h2", "h3"):
             heading_text = _normalize_heading(tag.get_text(" ", strip=True))
-            if sections or current is not None:
+            # Only treat as a new section if it's a recognized section heading.
+            if _is_section_heading(heading_text):
                 if current is not None:
                     current.text = "\n".join(body_lines).strip()
                     sections.append(current)
                 current = None
                 body_lines = []
-            is_psalm = heading_text.lower().startswith("responsorial psalm")
-            is_gospel = heading_text.lower().startswith("gospel")
-            current = Section(heading_text, "", "", is_psalm, is_gospel)
-            expecting_citation = True
+                is_psalm = heading_text.lower().startswith("responsorial psalm")
+                is_gospel = heading_text.lower().startswith("gospel")
+                current = Section(heading_text, "", "", is_psalm, is_gospel)
+                expecting_citation = True
             continue
         if name in ("p", "li", "blockquote") and current is not None:
             text = tag.get_text(" ", strip=True)

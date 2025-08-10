@@ -34,16 +34,19 @@ def fetch_usccb(date_str: str) -> Tuple[str, str]:
         if isinstance(exp, (int, float)) and exp > now and "text" in cached and "url" in cached:
             return str(cached["text"]), str(cached["url"])
 
-    resp = requests.get(
-        url,
-        headers={"User-Agent": "lectio-plus/1.0"},
-        timeout=(5, 20),
-    )
-    resp.raise_for_status()
-
-    data = {"text": resp.text, "url": url, "exp": now + _TTL_SECONDS}
+    headers = {"User-Agent": "lectio-plus/1.0"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=(5, 20))
+        resp.raise_for_status()
+        data = {"text": resp.text, "url": url, "exp": now + _TTL_SECONDS}
+    except Exception:
+        daily_base = os.getenv("USCCB_DAILY_URL", "https://bible.usccb.org/daily-bible-reading")
+        alt_url = f"{daily_base}?date={date_str}"
+        resp = requests.get(alt_url, headers=headers, timeout=(5, 20))
+        resp.raise_for_status()
+        data = {"text": resp.text, "url": alt_url, "exp": now + _TTL_SECONDS}
     _cache.set(cache_key, data)
-    return resp.text, url
+    return data["text"], data["url"]
 
 
 __all__ = ["fetch_usccb"]

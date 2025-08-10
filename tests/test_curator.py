@@ -98,6 +98,14 @@ def test_parse_art_json_validation() -> None:
             curator.parse_art_json(bad)
 
 
+def test_safe_parse_art_json_list_support() -> None:
+    payload = (
+        "[\n  {\n    \"title\": \"T\", \n    \"artist\": \"A\", \n    \"year\": \"2000\",\n    \"image_url\": \"https://upload.wikimedia.org/x.jpg\"\n  },\n  {\n    \"title\": \"X\", \"artist\": \"Y\", \"year\": \"1\", \"image_url\": \"https://upload.wikimedia.org/y.jpg\"\n  }\n]"
+    )
+    parsed = curator.safe_parse_art_json(payload)
+    assert parsed["title"] == "T" and parsed["artist"] == "A"
+
+
 def test_safe_parse_art_json_handles_messy_text(monkeypatch) -> None:
     messy = (
         "noise before\n{\n  \"title\": \"T\", \n  \"artist\": \"A\", \n  \"year\": \"2000\",\n"

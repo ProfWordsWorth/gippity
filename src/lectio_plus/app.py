@@ -272,6 +272,30 @@ def create_app(*, default_date: str | None = None) -> Flask:
             "</body></html>"
         )
 
+    @app.get("/debug/sections")
+    def debug_sections():
+        """Return a JSON summary of parsed sections for a given date.
+
+        Query params: ?date=YYYY-MM-DD (default today). No LLM usage.
+        """
+        date_str = request.args.get("date") or _dt.date.today().isoformat()
+        try:
+            html_usccb, url = scrape.fetch_usccb(date_str)
+            sections_list = parse_usccb_sections(html_usccb)
+            payload = []
+            for s in sections_list:
+                payload.append(
+                    {
+                        "label": s.label,
+                        "citation": s.citation,
+                        "text_len": len(s.text),
+                        "text_head": s.text[:400],
+                    }
+                )
+            return jsonify({"ok": True, "date": date_str, "url": url, "sections": payload}), 200
+        except Exception as exc:  # pragma: no cover - debug endpoint
+            return jsonify({"ok": False, "error": str(exc)}), 200
+
     @app.post("/run")
     def run_route() -> tuple[str, int, dict[str, str]]:
         date_str = request.form.get("date") or app.config.get("DEFAULT_DATE")
