@@ -3,9 +3,11 @@
 ## Quickstart
 
 1. Install dependencies: `pip install -r requirements.txt`
-2. Run all checks: `make check`
+2. Install pre-commit: `pip install pre-commit`
+3. Install git hooks: `pre-commit install`
+4. Run all checks: `make check`
    - Or individually: `make lint`, `make type`, `make test`
-3. Start the web server: `python -m lectio_plus.app --serve`
+5. Start the web server: `python -m lectio_plus.app --serve`
 
 ## Package layout
 
