@@ -20,7 +20,6 @@ from .curator import (
 from .html_build import build_html, build_prompt3_html, strip_code_fences, Section as P3Section
 from .parse import (
     parse_usccb_html as parse_usccb_sections,
-    make_prompt3_sections,
     build_readings_block,
     sections_to_text,
     safe_parse_sections_json,
@@ -162,7 +161,13 @@ def inject_cover_metadata(html: str, date_str: str, art: dict[str, str]) -> str:
 
 
 def run(readings_block: str, date_str: str = "DATE") -> str:
-    """Generate deterministic Prompt‑3 HTML for ``readings_block``."""
+    """Generate deterministic Prompt‑3 HTML for ``readings_block``.
+
+    This function does not fetch live HTML. It treats ``readings_block`` as the
+    full text for the booklet and renders it as a single section so that all
+    content appears in the final report when invoked via CLI or library use.
+    The web routes build richer sections from the live USCCB page.
+    """
 
     llm = get_llm()
     reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
@@ -181,17 +186,9 @@ def run(readings_block: str, date_str: str = "DATE") -> str:
         art = curator_fallback()
     # Art block is still incorporated in the deterministic cover
 
-    # Build sections deterministically from the fixture HTML and reflection
-    try:
-        # The readings_block comes from the USCCB HTML; we still have the
-        # fixture path here for structured extraction.
-        fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
-        sample_html = fixture_path.read_text(encoding="utf-8")
-        sections, final_reflection = make_prompt3_sections(sample_html, reflection)
-    except Exception:
-        # Fallback to a single section using the provided text
-        sections = [P3Section(heading="Reading", reading=readings_block, questions=[])]
-        final_reflection = reflection
+    # Build sections deterministically from the provided block
+    sections = [P3Section(heading="Readings", reading=readings_block, questions=[])]
+    final_reflection = reflection
 
     html_doc = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
 

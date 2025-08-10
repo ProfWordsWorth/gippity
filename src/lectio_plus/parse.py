@@ -183,7 +183,8 @@ def parse_usccb_html(html_text: str) -> List[Section]:
     expecting_citation = False
 
     # Iterate over tags, capturing h2/h3 and subsequent text blocks
-    for tag in container.find_all(["h2", "h3", "p", "li", "blockquote", "div", "section"], recursive=True):
+    from typing import cast, Any
+    for tag in cast(Any, container).find_all(["h2", "h3", "p", "li", "blockquote", "div", "section"], recursive=True):
         name = tag.name or ""
         if name in ("h2", "h3"):
             heading_text = _normalize_heading(tag.get_text(" ", strip=True))
