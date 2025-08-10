@@ -18,7 +18,13 @@ from .curator import (
     curator_fallback,
 )
 from .html_build import build_html, build_prompt3_html, strip_code_fences, Section as P3Section
-from .parse import parse_usccb_html as parse_usccb_sections, make_prompt3_sections, build_readings_block
+from .parse import (
+    parse_usccb_html as parse_usccb_sections,
+    make_prompt3_sections,
+    build_readings_block,
+    sections_to_text,
+    safe_parse_sections_json,
+)
 from . import scrape
 
 
@@ -224,14 +230,29 @@ def create_app(*, default_date: str | None = None) -> Flask:
         today = _dt.date.today().isoformat()
         value = app.config.get("DEFAULT_DATE") or today
         return (
-            "<form method='post' action='/run' style='margin-bottom:8px'>"
-            f"<input type='date' name='date' value='{value}'>"
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            "<title>Lectio+ Daily Readings</title>"
+            "<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:20px;color:#222}"
+            ".wrap{max-width:720px;margin:0 auto}h1{margin:0 0 12px}p.hint{color:#555}form{display:inline-block;margin:4px 6px 0 0}"
+            "input[type=date]{padding:6px 8px;border:1px solid #ccc;border-radius:4px}button{padding:6px 10px;border:1px solid #0a7;border-radius:4px;background:#0a7;color:#fff;cursor:pointer}button.secondary{background:#555;border-color:#555}"
+            "#overlay{position:fixed;inset:0;background:rgba(255,255,255,0.8);display:none;align-items:center;justify-content:center;font-size:16px;color:#333}"
+            "</style></head><body><div class='wrap'>"
+            "<h1>Lectio+ Daily Readings</h1>"
+            "<p class='hint'>Generate a printable reflection booklet for the selected date. </p>"
+            "<div>"
+            "<form method='post' action='/run'>"
+            f"<input type='date' name='date' value='{value}'> "
             "<button type='submit'>Generate</button>"
             "</form>"
             "<form method='post' action='/pdf'>"
             f"<input type='hidden' name='date' value='{value}'>"
-            "<button type='submit'>Download PDF</button>"
+            " <button class='secondary' type='submit'>Download PDF</button>"
             "</form>"
+            "</div>"
+            "</div><div id='overlay'>Working… Please wait.</div>"
+            "<script>for(const f of document.querySelectorAll('form')){f.addEventListener('submit',()=>{document.getElementById('overlay').style.display='flex';});}</script>"
+            "</body></html>"
         )
 
     @app.post("/run")
@@ -241,10 +262,12 @@ def create_app(*, default_date: str | None = None) -> Flask:
             date_str = _dt.date.today().isoformat()
 
         sections_list: list | None = None
+        readings_source_url: str | None = None
         try:
             html_usccb, _url = scrape.fetch_usccb(date_str)
             sections_list = parse_usccb_sections(html_usccb)
             readings_block = build_readings_block(sections_list)
+            readings_source_url = _url
         except Exception as exc:
             # Fallback to local fixture if live fetch/parsing fails
             app.logger.warning("live fetch/parsing failed: %s", exc)
@@ -287,14 +310,56 @@ def create_app(*, default_date: str | None = None) -> Flask:
 
         # Art block is embedded in cover metadata
 
+        # Optional: enrich sections with context/exegesis/questions via LLM
+        enriched_sections: list[P3Section] | None = None
+        if os.getenv("ENABLE_ENRICH_SECTIONS") == "1":
+            try:
+                sections_text = sections_to_text(sections_list)
+                prompt_sections = prompts.make_prompt_sections(date_str, sections_text)
+                sections_model = os.environ.get("SECTIONS_MODEL", reflection_model)
+                enrichment_raw = llm.generate(sections_model, prompt_sections)
+                enrichment = safe_parse_sections_json(enrichment_raw)
+                items = enrichment.get("sections") or []
+                final_ref = enrichment.get("final_reflection")
+                enriched_sections = []
+                for idx, s in enumerate(sections_list):
+                    item = items[idx] if idx < len(items) else {}
+                    context = item.get("context") if isinstance(item, dict) else None
+                    exegesis = item.get("exegesis") if isinstance(item, dict) else None
+                    questions = item.get("questions") if isinstance(item, dict) else []
+                    if not isinstance(questions, list):
+                        questions = []
+                    enriched_sections.append(
+                        P3Section(
+                            heading=s.label,
+                            reading=((s.citation + "\n") if s.citation else "") + s.text,
+                            context=context or None,
+                            exegesis=exegesis or None,
+                            questions=[str(q) for q in questions][:4],
+                        )
+                    )
+                if isinstance(final_ref, str) and final_ref.strip():
+                    reflection = final_ref.strip()
+            except Exception as exc:
+                app.logger.warning("section enrichment failed: %s", exc)
+
         # Deterministic HTML build stage
         try:
             if not sections_list:
                 raise RuntimeError("no sections available")
-            sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
-                        for s in sections_list]
+            if enriched_sections is None:
+                sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
+                            for s in sections_list]
+            else:
+                sections = enriched_sections
             final_reflection = reflection
-            html = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
+            html = build_prompt3_html(
+                date_str,
+                art,
+                sections,
+                strip_code_fences(final_reflection),
+                source_url=readings_source_url,
+            )
         except Exception as exc:
             app.logger.error("final HTML build failed: %s", exc)
             html = f"<html><body><p>Error: {str(exc)}</p></body></html>"
@@ -307,10 +372,12 @@ def create_app(*, default_date: str | None = None) -> Flask:
             date_str = _dt.date.today().isoformat()
 
         # Build readings from live or fixture
+        readings_source_url: str | None = None
         try:
             html_usccb, _url = scrape.fetch_usccb(date_str)
             sections_list = parse_usccb_sections(html_usccb)
             readings_block = build_readings_block(sections_list)
+            readings_source_url = _url
         except Exception:
             try:
                 fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
@@ -341,17 +408,59 @@ def create_app(*, default_date: str | None = None) -> Flask:
         except Exception:
             art = curator_fallback()
 
+        # Optional enrichment for sections
+        enriched_sections: list[P3Section] | None = None
+        if os.getenv("ENABLE_ENRICH_SECTIONS") == "1":
+            try:
+                sections_text = sections_to_text(sections_list)
+                prompt_sections = prompts.make_prompt_sections(date_str, sections_text)
+                sections_model = os.environ.get("SECTIONS_MODEL", reflection_model)
+                enrichment_raw = llm.generate(sections_model, prompt_sections)
+                enrichment = safe_parse_sections_json(enrichment_raw)
+                items = enrichment.get("sections") or []
+                final_ref = enrichment.get("final_reflection")
+                enriched_sections = []
+                for idx, s in enumerate(sections_list):
+                    item = items[idx] if idx < len(items) else {}
+                    context = item.get("context") if isinstance(item, dict) else None
+                    exegesis = item.get("exegesis") if isinstance(item, dict) else None
+                    questions = item.get("questions") if isinstance(item, dict) else []
+                    if not isinstance(questions, list):
+                        questions = []
+                    enriched_sections.append(
+                        P3Section(
+                            heading=s.label,
+                            reading=((s.citation + "\n") if s.citation else "") + s.text,
+                            context=context or None,
+                            exegesis=exegesis or None,
+                            questions=[str(q) for q in questions][:4],
+                        )
+                    )
+                if isinstance(final_ref, str) and final_ref.strip():
+                    reflection = final_ref.strip()
+            except Exception as exc:
+                app.logger.warning("section enrichment failed: %s", exc)
+
         try:
             if not sections_list:
                 raise RuntimeError("no sections available")
-            sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
-                        for s in sections_list]
+            if enriched_sections is None:
+                sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
+                            for s in sections_list]
+            else:
+                sections = enriched_sections
             final_reflection = reflection
         except Exception:
             sections = [P3Section(heading="Reading", reading=readings_block, questions=[])]
             final_reflection = reflection
 
-        html_doc = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
+        html_doc = build_prompt3_html(
+            date_str,
+            art,
+            sections,
+            strip_code_fences(final_reflection),
+            source_url=readings_source_url,
+        )
 
         # Prefer pdfkit/wkhtmltopdf, fallback to WeasyPrint
         pdf_bytes: bytes | None = None

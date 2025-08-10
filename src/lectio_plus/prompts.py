@@ -36,6 +36,22 @@ PROMPT_3 = (
 )
 
 
+# New: Section enrichment prompt to produce context, exegesis, questions
+PROMPT_SECTIONS = (
+    "You are a Catholic theologian and catechist.\n"
+    "Given the following lectionary sections for the date <<DATE>>, write:\n"
+    "- A 1–2 sentence Context for each section (<= 50 words).\n"
+    "- An optional 1 sentence Exegetical Note (<= 40 words).\n"
+    "- 3–4 concise Reflection Questions per section.\n"
+    "- A short Final Reflection covering all readings (<= 120 words).\n"
+    "Respond strictly in JSON with keys: {\"sections\": [\n"
+    "  {\"heading\": str, \"context\": str, \"exegesis\": str | null, \"questions\": [str, ...]}\n"
+    "], \"final_reflection\": str}. No HTML, no backticks, no commentary.\n\n"
+    "SECTIONS INPUT (in order):\n"
+    "<<SECTIONS>>\n"
+)
+
+
 def make_prompt1(readings_block: str) -> str:
     """Insert ``readings_block`` into :data:`PROMPT_1`."""
 
@@ -64,12 +80,22 @@ def make_prompt3(date_str: str, raw_blocks: str) -> str:
     )
 
 
+def make_prompt_sections(date_str: str, sections_text: str) -> str:
+    """Insert ``date_str`` and ``sections_text`` into :data:`PROMPT_SECTIONS`."""
+
+    truncated = sections_text[:12000]
+    return (
+        PROMPT_SECTIONS.replace("<<DATE>>", date_str).replace("<<SECTIONS>>", truncated)
+    )
+
+
 __all__ = [
     "PROMPT_1",
     "PROMPT_2",
     "PROMPT_3",
+    "PROMPT_SECTIONS",
     "make_prompt1",
     "make_prompt2",
     "make_prompt3",
+    "make_prompt_sections",
 ]
-

@@ -213,3 +213,41 @@ def parse_usccb_html(html_text: str) -> List[Section]:
         sections.append(current)
 
     return sections
+
+
+def sections_to_text(sections: List[Section]) -> str:
+    """Return a readable text representation of sections for prompting."""
+
+    parts: List[str] = []
+    for s in sections:
+        head = s.label
+        if s.citation:
+            head = f"{head} — {s.citation}"
+        body = s.text.strip()
+        parts.append(f"## {head}\n{body}")
+    return "\n\n".join(parts)
+
+
+def safe_parse_sections_json(raw: str) -> dict:
+    """Parse enrichment JSON returning a dict with keys 'sections' and 'final_reflection'.
+
+    Extracts the first JSON object from text and loads it. Minimal validation
+    ensures 'sections' is a list of dicts.
+    """
+
+    import json
+    import re as _re
+
+    text = raw.strip()
+    # Remove code fences if present
+    if text.startswith("```"):
+        text = _re.sub(r"^```\w*\n?", "", text)
+        text = text.rsplit("```", 1)[0].strip()
+    m = _re.search(r"\{.*\}", text, flags=_re.S)
+    if not m:
+        raise ValueError("no JSON object found")
+    obj = json.loads(m.group(0))
+    sections = obj.get("sections")
+    if not isinstance(sections, list):
+        raise ValueError("sections not list")
+    return obj
