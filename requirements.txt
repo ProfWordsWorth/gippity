@@ -8,3 +8,4 @@ openai
 pdfkit
 weasyprint
 beautifulsoup4
+reportlab

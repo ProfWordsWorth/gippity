@@ -462,7 +462,7 @@ def create_app(*, default_date: str | None = None) -> Flask:
             source_url=readings_source_url,
         )
 
-        # Prefer pdfkit/wkhtmltopdf, fallback to WeasyPrint
+        # Prefer pdfkit/wkhtmltopdf, fallback to WeasyPrint, then reportlab
         pdf_bytes: bytes | None = None
         try:
             import pdfkit  # type: ignore
@@ -477,8 +477,33 @@ def create_app(*, default_date: str | None = None) -> Flask:
 
                 pdf_bytes = HTML(string=html_doc).write_pdf()
             except Exception as exc:
-                app.logger.error("PDF generation failed: %s", exc)
-                pdf_bytes = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n% No PDF available\n"
+                app.logger.warning("WeasyPrint failed: %s; using reportlab fallback", exc)
+                try:
+                    # Last resort: valid single-page PDF with plain text
+                    from reportlab.lib.pagesizes import letter  # type: ignore
+                    from reportlab.pdfgen import canvas  # type: ignore
+                    import io
+
+                    buf = io.BytesIO()
+                    c = canvas.Canvas(buf, pagesize=letter)
+                    width, height = letter
+                    c.setFont("Helvetica", 14)
+                    c.drawString(72, height - 72, f"Daily Readings — {date_str}")
+                    c.setFont("Helvetica", 10)
+                    y = height - 96
+                    c.drawString(72, y, "Open the HTML version for full layout and images.")
+                    y -= 18
+                    if isinstance(art, dict) and art.get("title"):
+                        c.drawString(72, y, f"Artwork: {art.get('title')} by {art.get('artist')} ({art.get('year')})")
+                        y -= 18
+                    if isinstance(readings_source_url, str) and readings_source_url:
+                        c.drawString(72, y, f"Source: {readings_source_url}")
+                    c.showPage()
+                    c.save()
+                    pdf_bytes = buf.getvalue()
+                except Exception as exc2:
+                    app.logger.error("Reportlab fallback failed: %s", exc2)
+                    pdf_bytes = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
 
         headers = {
             "Content-Type": "application/pdf",
