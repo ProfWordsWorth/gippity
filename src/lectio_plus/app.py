@@ -17,8 +17,8 @@ from .curator import (
     safe_parse_art_json,
     curator_fallback,
 )
-from .html_build import build_html
-from .parse import parse_usccb_html
+from .html_build import build_html, build_prompt3_html, strip_code_fences, Section as P3Section
+from .parse import parse_usccb_html, make_prompt3_sections
 
 
 def _ollama_timeout() -> float:
@@ -155,12 +155,12 @@ def inject_cover_metadata(html: str, date_str: str, art: dict[str, str]) -> str:
 
 
 def run(readings_block: str, date_str: str = "DATE") -> str:
-    """Generate HTML for ``readings_block`` using the configured LLM provider."""
+    """Generate deterministic Prompt‑3 HTML for ``readings_block``."""
 
     llm = get_llm()
     reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
     art_model = os.environ.get("ART_MODEL", "gpt-5-mini")
-    html_model = os.environ.get("HTML_MODEL", "gpt-5-mini")
+    # HTML model unused with deterministic layout; kept for env parity
 
     prompt1 = prompts.make_prompt1(readings_block)
     reflection = llm.generate(reflection_model, prompt1)
@@ -172,13 +172,32 @@ def run(readings_block: str, date_str: str = "DATE") -> str:
     except Exception:
         # Use fallback to be resilient in library use
         art = curator_fallback()
-    art_block = curate([art["title"], art["artist"], art["year"], art["image_url"]])
+    # Art block is still incorporated in the deterministic cover
 
-    raw_blocks = stitch_blocks_for_prompt3([reflection, art_block])
-    prompt3 = prompts.make_prompt3(date_str, raw_blocks)
-    injected_html = llm.generate(html_model, prompt3)
-    final_html = inject_cover_metadata(injected_html, date_str, art)
-    return build_html(final_html)
+    # Build sections deterministically from the fixture HTML and reflection
+    try:
+        # The readings_block comes from the USCCB HTML; we still have the
+        # fixture path here for structured extraction.
+        fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+        sample_html = fixture_path.read_text(encoding="utf-8")
+        sections, final_reflection = make_prompt3_sections(sample_html, reflection)
+    except Exception:
+        # Fallback to a single section using the provided text
+        sections = [P3Section(heading="Reading", reading=readings_block, questions=[])]
+        final_reflection = reflection
+
+    html_doc = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
+
+    # Back-compat: include legacy injected HTML from model as a comment
+    try:
+        raw_blocks = stitch_blocks_for_prompt3([reflection, curate([art["title"], art["artist"], art["year"], art["image_url"]])])
+        prompt3 = prompts.make_prompt3(date_str, raw_blocks)
+        html_model = os.environ.get("HTML_MODEL", "gpt-5-mini")
+        injected_html_legacy = llm.generate(html_model, prompt3)
+    except Exception:
+        injected_html_legacy = ""
+
+    return build_html(html_doc + (f"<!-- legacy: {injected_html_legacy} -->" if injected_html_legacy else ""))
 
 
 def create_app(*, default_date: str | None = None) -> Flask:
@@ -204,9 +223,13 @@ def create_app(*, default_date: str | None = None) -> Flask:
         today = _dt.date.today().isoformat()
         value = app.config.get("DEFAULT_DATE") or today
         return (
-            "<form method='post' action='/run'>"
+            "<form method='post' action='/run' style='margin-bottom:8px'>"
             f"<input type='date' name='date' value='{value}'>"
             "<button type='submit'>Generate</button>"
+            "</form>"
+            "<form method='post' action='/pdf'>"
+            f"<input type='hidden' name='date' value='{value}'>"
+            "<button type='submit'>Download PDF</button>"
             "</form>"
         )
 
@@ -228,7 +251,6 @@ def create_app(*, default_date: str | None = None) -> Flask:
         llm = get_llm()
         reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
         art_model = os.environ.get("ART_MODEL", "gpt-5-mini")
-        html_model = os.environ.get("HTML_MODEL", "gpt-5-mini")
 
         # Reflection stage
         try:
@@ -253,24 +275,84 @@ def create_app(*, default_date: str | None = None) -> Flask:
             app.logger.warning("art generation failed: %s", exc)
             art = curator_fallback()
 
-        art_block = curate([art["title"], art["artist"], art["year"], art["image_url"]])
+        # Art block is embedded in cover metadata
 
-        # HTML stage
+        # Deterministic HTML build stage
         try:
-            raw_blocks = stitch_blocks_for_prompt3([reflection, art_block])
-            prompt3 = prompts.make_prompt3(date_str, raw_blocks)
-            injected_html = llm.generate(html_model, prompt3)
-        except Exception as exc:
-            app.logger.warning("html generation failed: %s", exc)
-            injected_html = "<section>Content is temporarily unavailable.</section>"
-
-        try:
-            final_html = inject_cover_metadata(injected_html, date_str, art)
-            html = build_html(final_html)
+            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+            sample_html = fixture_path.read_text(encoding="utf-8")
+            sections, final_reflection = make_prompt3_sections(sample_html, reflection)
+            html = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
         except Exception as exc:
             app.logger.error("final HTML build failed: %s", exc)
             html = f"<html><body><p>Error: {str(exc)}</p></body></html>"
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+    @app.post("/pdf")
+    def pdf_route() -> tuple[bytes, int, dict[str, str]]:
+        date_str = request.form.get("date") or app.config.get("DEFAULT_DATE")
+        if not date_str:
+            date_str = _dt.date.today().isoformat()
+
+        # Replicate the string inputs used for /run
+        try:
+            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+            sample_html = fixture_path.read_text(encoding="utf-8")
+            readings_block = parse_usccb_html(sample_html)
+        except Exception:
+            readings_block = ""
+
+        llm = get_llm()
+        reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
+        art_model = os.environ.get("ART_MODEL", "gpt-5-mini")
+
+        try:
+            prompt1 = prompts.make_prompt1(readings_block)
+            reflection = llm.generate(reflection_model, prompt1)
+        except Exception:
+            reflection = "A brief reflection is temporarily unavailable."
+
+        try:
+            prompt2 = prompts.make_prompt2(date_str, readings_block)
+            art_raw = llm.generate(art_model, prompt2)
+            try:
+                art = safe_parse_art_json(art_raw)
+            except Exception:
+                art = curator_fallback()
+        except Exception:
+            art = curator_fallback()
+
+        try:
+            sections, final_reflection = make_prompt3_sections(sample_html, reflection)
+        except Exception:
+            sections = [P3Section(heading="Reading", reading=readings_block, questions=[])]
+            final_reflection = reflection
+
+        html_doc = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
+
+        # Prefer pdfkit/wkhtmltopdf, fallback to WeasyPrint
+        pdf_bytes: bytes | None = None
+        try:
+            import pdfkit  # type: ignore
+
+            pdf_bytes = pdfkit.from_string(html_doc, False, options={"quiet": ""})
+        except Exception:
+            pdf_bytes = None
+
+        if pdf_bytes is None:
+            try:
+                from weasyprint import HTML  # type: ignore
+
+                pdf_bytes = HTML(string=html_doc).write_pdf()
+            except Exception as exc:
+                app.logger.error("PDF generation failed: %s", exc)
+                pdf_bytes = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n% No PDF available\n"
+
+        headers = {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": f"attachment; filename=Daily-Readings-{date_str}.pdf",
+        }
+        return pdf_bytes, 200, headers
 
     return app
 

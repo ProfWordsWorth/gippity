@@ -5,3 +5,5 @@ requests
 flask
 Flask
 openai
+pdfkit
+weasyprint
