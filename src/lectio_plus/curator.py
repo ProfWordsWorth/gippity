@@ -54,12 +54,26 @@ def safe_parse_art_json(text: str) -> dict[str, str]:
       :func:`ensure_upload_wikimedia_url`. If still invalid, raise ``ValueError``.
     """
 
-    match = re.search(r"\{.*\}", text, flags=re.S)
-    if not match:
-        raise ValueError("no JSON object found")
-    obj_text = match.group(0)
-
-    data = json.loads(obj_text)
+    # First, try to parse the whole payload directly
+    try:
+        data_any = json.loads(text)
+        if isinstance(data_any, list):
+            # pick the first dict in the array
+            data = next((item for item in data_any if isinstance(item, dict)), None)
+            if data is None:
+                raise ValueError("no object in array")
+        elif isinstance(data_any, dict):
+            data = data_any
+        else:
+            raise ValueError("unexpected JSON type")
+    except Exception:
+        # Fallback: find the first valid JSON object in the text using a
+        # non‑greedy match and try to parse it.
+        match = re.search(r"\{.*?\}", text, flags=re.S)
+        if not match:
+            raise ValueError("no JSON object found")
+        obj_text = match.group(0)
+        data = json.loads(obj_text)
     if isinstance(data, list):
         data = next((item for item in data if isinstance(item, dict)), None)
         if data is None:
