@@ -51,6 +51,8 @@ def build_prompt3_html(
     art: dict,
     sections: list[Section],
     final_reflection: str,
+    *,
+    source_url: str | None = None,
 ) -> str:
     """Return a complete HTML document for the Prompt‑3 booklet layout.
 
@@ -149,13 +151,20 @@ def build_prompt3_html(
     parts.append(
         """
     </main>
+    <footer style='margin-top:28px;color:#666;font-size:12px;'>
+      <div>Prepared with Lectio+.</div>
+      {FOOTER_LINK}
+    </footer>
   </div>
 </body>
 </html>
 """
     )
-
-    return "\n".join(parts)
+    footer_link = ""
+    if source_url:
+        esc_url = html.escape(source_url)
+        footer_link = f"<div>Readings source: <a href=\"{esc_url}\">{esc_url}</a></div>"
+    return "\n".join(parts).replace("{FOOTER_LINK}", footer_link)
 
 
 __all__ = ["build_html", "build_prompt3_html", "strip_code_fences", "Section"]
