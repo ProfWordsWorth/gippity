@@ -97,3 +97,37 @@ def test_parse_art_json_validation() -> None:
         with pytest.raises(ValueError):
             curator.parse_art_json(bad)
 
+
+def test_safe_parse_art_json_handles_messy_text(monkeypatch) -> None:
+    messy = (
+        "noise before\n{\n  \"title\": \"T\", \n  \"artist\": \"A\", \n  \"year\": \"2000\",\n"
+        "  \"image_url\": \"https://upload.wikimedia.org/x.jpg\"\n}\nextra"
+    )
+    parsed = curator.safe_parse_art_json(messy)
+    assert parsed["title"] == "T" and parsed["artist"] == "A"
+
+
+def test_safe_parse_art_json_normalizes_url(monkeypatch) -> None:
+    text = (
+        '{"title":"T","artist":"A","year":"2000","image_url":"https://commons.wikimedia.org/wiki/Special:FilePath/Foo.jpg"}'
+    )
+
+    def fake_resolve(url: str, *, follow_redirects: bool = True) -> str:
+        return "https://upload.wikimedia.org/wikipedia/commons/f/ff/Foo.jpg"
+
+    monkeypatch.setattr(curator, "ensure_upload_wikimedia_url", fake_resolve)
+    parsed = curator.safe_parse_art_json(text)
+    assert parsed["image_url"].startswith("https://upload.wikimedia.org/")
+
+
+def test_safe_parse_art_json_raises_if_unresolvable(monkeypatch) -> None:
+    text = (
+        '{"title":"T","artist":"A","year":"2000","image_url":"https://example.com/file.jpg"}'
+    )
+
+    def fake_resolve(url: str, *, follow_redirects: bool = True) -> str:
+        return url
+
+    monkeypatch.setattr(curator, "ensure_upload_wikimedia_url", fake_resolve)
+    with pytest.raises(ValueError):
+        curator.safe_parse_art_json(text)
