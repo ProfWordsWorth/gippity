@@ -13,3 +13,5 @@ done
 python -m ruff check .
 python -m mypy src
 python -m pytest -q
+
+echo "All checks passed!"

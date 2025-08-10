@@ -6,7 +6,7 @@ import argparse
 import datetime as _dt
 import os
 from pathlib import Path
-from typing import Iterable, Protocol
+from typing import Any, Iterable, Protocol, cast
 
 from flask import Flask, request  # type: ignore[import-not-found]
 
@@ -81,19 +81,24 @@ class OpenAILLM:
         )
 
         if is_ollama:
-            msgs = [
+            msgs: list[dict[str, str]] = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
             ]
-            kwargs: dict[str, object] = {
-                "model": model,
-                "messages": msgs,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            resp = client.chat.completions.create(**kwargs)
-            return resp.choices[0].message.content or ""
+            if max_tokens is None:
+                resp_chat = client.chat.completions.create(
+                    model=model,
+                    messages=cast(Any, msgs),
+                    temperature=temperature,
+                )
+            else:
+                resp_chat = client.chat.completions.create(
+                    model=model,
+                    messages=cast(Any, msgs),
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            return resp_chat.choices[0].message.content or ""
 
         resp = client.responses.create(
             model=model,

@@ -4,3 +4,4 @@ mypy
 requests
 flask
 Flask
+openai
