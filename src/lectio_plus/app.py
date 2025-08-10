@@ -133,6 +133,12 @@ def get_llm() -> LLM:
     """Return an :class:`LLM` implementation based on environment variables."""
 
     provider = os.environ.get("LLM_PROVIDER")
+    # Autodetect Ollama if base URL + key present and provider unset
+    if not provider:
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if base_url and api_key:
+            provider = "ollama"
     if provider == "ollama":
         base_url = os.environ.get("OPENAI_BASE_URL")
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -251,10 +257,11 @@ def create_app(*, default_date: str | None = None) -> Flask:
             f"<input type='date' name='date' value='{value}'> "
             "<button type='submit'>Generate</button>"
             "</form>"
-            "<form method='post' action='/pdf'>"
+            "<form method='post' action='/pdf' target='dlframe'>"
             f"<input type='hidden' name='date' value='{value}'>"
             " <button class='secondary' type='submit'>Download PDF</button>"
             "</form>"
+            "<iframe id='dlframe' name='dlframe' style='display:none'></iframe>"
             "</div>"
             "</div><div id='overlay'>"
             "  <div class='stage'>"
@@ -268,7 +275,7 @@ def create_app(*, default_date: str | None = None) -> Flask:
             "  </div>"
             "  <div class='msg'>Generating your booklet…</div>"
             "</div>"
-            "<script>for(const f of document.querySelectorAll('form')){f.addEventListener('submit',()=>{document.getElementById('overlay').style.display='flex';});}</script>"
+            "<script>for(const f of document.querySelectorAll('form')){f.addEventListener('submit',()=>{document.getElementById('overlay').style.display='flex';});}const dl=document.getElementById('dlframe');if(dl){dl.addEventListener('load',()=>{document.getElementById('overlay').style.display='none';});}</script>"
             "</body></html>"
         )
 
@@ -502,6 +509,22 @@ def create_app(*, default_date: str | None = None) -> Flask:
             strip_code_fences(final_reflection),
             source_url=readings_source_url,
         )
+
+        # Embed artwork image into HTML for PDF to ensure it always appears
+        try:
+            import base64
+            import requests  # type: ignore
+            img_url = art.get("image_url") if isinstance(art, dict) else None
+            if isinstance(img_url, str) and img_url.startswith("http"):
+                r = requests.get(img_url, timeout=10)
+                if getattr(r, "ok", False):
+                    b64 = base64.b64encode(r.content).decode("ascii")
+                    # naive content-type guess
+                    ctype = "image/jpeg" if img_url.lower().endswith((".jpg", ".jpeg")) else "image/png"
+                    data_uri = f"data:{ctype};base64,{b64}"
+                    html_doc = html_doc.replace(img_url, data_uri)
+        except Exception:
+            pass
 
         # Prefer pdfkit/wkhtmltopdf, fallback to WeasyPrint, then reportlab
         pdf_bytes: bytes | None = None

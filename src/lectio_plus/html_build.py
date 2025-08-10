@@ -68,29 +68,42 @@ def build_prompt3_html(
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
   <title>Daily Readings – {DATE}</title>
   <style>
-    :root{--text:#222;--muted:#555;--rule:#ddd}
+    :root{--text:#222;--muted:#556;--rule:#e3e3ea;--accent:#6b6ba3}
     @page{margin:18mm}
-    body{margin:0;color:var(--text);}
+    body{margin:0;color:var(--text);background:#f7f7fb}
+    .nav{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(247,247,251,.95),rgba(247,247,251,.7));backdrop-filter:blur(4px);padding:8px 0;border-bottom:1px solid var(--rule)}
+    .nav .inner{max-width:680px;margin:0 auto;display:flex;justify-content:flex-end;padding:0 22px}
+    .nav a{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none;color:var(--accent);border:1px solid var(--accent);padding:4px 8px;border-radius:6px}
     .page{padding:22px;max-width:680px;margin:0 auto;font-family: Georgia, 'Times New Roman', serif;font-size:15px;line-height:1.6}
     .cover{text-align:center;margin-bottom:24px}
     .cover h1{margin:0 0 4px;font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;font-size:28px}
     .cover h2{margin:0 0 14px;font-weight:500;font-size:18px;color:var(--muted)}
     .figurewrap{margin:0 auto 8px}
-    .figurewrap img{max-width:100%;height:auto;border-radius:3px}
+    .figurewrap img{max-width:100%;height:auto;border-radius:3px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
     .caption{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
     main.content{margin-top:12px}
     h2{font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;font-size:20px;margin:22px 0 8px}
     p{margin:10px 0}
     p.context{color:#333;font-size:14px}
-    .reading{white-space:pre-wrap;background:#fbfbfb;border:1px solid #eee;padding:10px 12px;border-radius:4px}
+    .reading{white-space:pre-wrap;background:#fbfbfe;border:1px solid #eee;padding:10px 12px;border-radius:4px}
     p.exegesis{font-size:14px;color:#333}
     ul.q-list{margin:6px 0 14px 22px}
     ul.q-list li{margin:4px 0}
     hr{border:0;border-top:1px solid var(--rule);margin:18px 0}
     section.final-reflect{margin-top:20px}
+    /* Contemplative background geometry */
+    .bg-geo{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.25;background:
+      radial-gradient(circle at 20% 30%, rgba(107,107,163,.15), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(107,107,163,.12), transparent 40%),
+      repeating-conic-gradient(from 0deg, rgba(0,0,40,.04) 0 10deg, transparent 10deg 20deg);
+      mask:radial-gradient(circle at 50% 50%, #000, rgba(0,0,0,0) 70%);
+      animation:slowspin 120s linear infinite}
+    @keyframes slowspin{to{transform:rotate(1turn)}}
   </style>
 </head>
 <body>
+  <div class=\"bg-geo\"></div>
+  <div class=\"nav\"><div class=\"inner\"><a href=\"/\">Home</a></div></div>
   <div class=\"page\">
     <section class=\"cover\">
       <h1>Daily Readings</h1>
