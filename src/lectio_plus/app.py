@@ -18,7 +18,8 @@ from .curator import (
     curator_fallback,
 )
 from .html_build import build_html, build_prompt3_html, strip_code_fences, Section as P3Section
-from .parse import parse_usccb_html, make_prompt3_sections
+from .parse import parse_usccb_html as parse_usccb_sections, make_prompt3_sections, build_readings_block
+from . import scrape
 
 
 def _ollama_timeout() -> float:
@@ -239,14 +240,23 @@ def create_app(*, default_date: str | None = None) -> Flask:
         if not date_str:
             date_str = _dt.date.today().isoformat()
 
+        sections_list: list | None = None
         try:
-            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
-            sample_html = fixture_path.read_text(encoding="utf-8")
-            readings_block = parse_usccb_html(sample_html)
+            html_usccb, _url = scrape.fetch_usccb(date_str)
+            sections_list = parse_usccb_sections(html_usccb)
+            readings_block = build_readings_block(sections_list)
         except Exception as exc:
-            # If fixture parsing fails, continue with minimal block
-            app.logger.warning("failed to parse fixture: %s", exc)
-            readings_block = ""
+            # Fallback to local fixture if live fetch/parsing fails
+            app.logger.warning("live fetch/parsing failed: %s", exc)
+            try:
+                fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+                sample_html = fixture_path.read_text(encoding="utf-8")
+                sections_list = parse_usccb_sections(sample_html)
+                readings_block = build_readings_block(sections_list)
+            except Exception as exc2:
+                app.logger.warning("fixture parsing failed: %s", exc2)
+                sections_list = []
+                readings_block = ""
 
         llm = get_llm()
         reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
@@ -279,9 +289,11 @@ def create_app(*, default_date: str | None = None) -> Flask:
 
         # Deterministic HTML build stage
         try:
-            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
-            sample_html = fixture_path.read_text(encoding="utf-8")
-            sections, final_reflection = make_prompt3_sections(sample_html, reflection)
+            if not sections_list:
+                raise RuntimeError("no sections available")
+            sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
+                        for s in sections_list]
+            final_reflection = reflection
             html = build_prompt3_html(date_str, art, sections, strip_code_fences(final_reflection))
         except Exception as exc:
             app.logger.error("final HTML build failed: %s", exc)
@@ -294,13 +306,20 @@ def create_app(*, default_date: str | None = None) -> Flask:
         if not date_str:
             date_str = _dt.date.today().isoformat()
 
-        # Replicate the string inputs used for /run
+        # Build readings from live or fixture
         try:
-            fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
-            sample_html = fixture_path.read_text(encoding="utf-8")
-            readings_block = parse_usccb_html(sample_html)
+            html_usccb, _url = scrape.fetch_usccb(date_str)
+            sections_list = parse_usccb_sections(html_usccb)
+            readings_block = build_readings_block(sections_list)
         except Exception:
-            readings_block = ""
+            try:
+                fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
+                sample_html = fixture_path.read_text(encoding="utf-8")
+                sections_list = parse_usccb_sections(sample_html)
+                readings_block = build_readings_block(sections_list)
+            except Exception:
+                sections_list = []
+                readings_block = ""
 
         llm = get_llm()
         reflection_model = os.environ.get("REFLECTION_MODEL", "gpt-5-chat-latest")
@@ -323,7 +342,11 @@ def create_app(*, default_date: str | None = None) -> Flask:
             art = curator_fallback()
 
         try:
-            sections, final_reflection = make_prompt3_sections(sample_html, reflection)
+            if not sections_list:
+                raise RuntimeError("no sections available")
+            sections = [P3Section(heading=s.label, reading=((s.citation + "\n") if s.citation else "") + s.text, questions=[])
+                        for s in sections_list]
+            final_reflection = reflection
         except Exception:
             sections = [P3Section(heading="Reading", reading=readings_block, questions=[])]
             final_reflection = reflection
@@ -372,7 +395,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "usccb" / "sample_1.html"
     sample_html = fixture_path.read_text(encoding="utf-8")
-    readings_block = parse_usccb_html(sample_html)
+    readings_block = build_readings_block(parse_usccb_sections(sample_html))
     date_str = args.date or _dt.date.today().isoformat()
     html = run(readings_block, date_str)
     print(html)

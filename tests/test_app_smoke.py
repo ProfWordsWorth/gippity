@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import os
 
 from lectio_plus.app import FakeLLM, OpenAILLM, create_app, run
+from lectio_plus import scrape
 
 
 def test_app_run_returns_html() -> None:
@@ -58,6 +59,13 @@ def test_create_app_get_returns_ok() -> None:
 
 
 def test_post_run_injects_metadata(monkeypatch) -> None:
+    # Ensure offline: provide fixture HTML via scrape layer
+    sample_html = Path("fixtures/usccb/sample_1.html").read_text(encoding="utf-8")
+
+    def fake_fetch(date_str: str):  # noqa: ARG001
+        return sample_html, "https://bible.usccb.org/bible/readings/20240504.cfm"
+
+    monkeypatch.setattr(scrape, "fetch_usccb", fake_fetch)
     outputs = [
         "reflection",
         '{"title": "T", "artist": "A", "year": "2000", "image_url": "https://upload.wikimedia.org/x.jpg"}',

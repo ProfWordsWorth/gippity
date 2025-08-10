@@ -111,11 +111,8 @@ def build_readings_block(sections: List[Section]) -> str:
     return "\n\n".join(blocks).strip()
 
 
-def parse_usccb_html(html: str) -> str:
-    """Parse ``html`` and return a human readable readings block."""
-
-    sections = extract_sections(html)
-    return build_readings_block(sections)
+# Note: legacy parse_usccb_html(text)->str was removed in favor of the
+# BeautifulSoup-based parser below that returns structured sections.
 
 
 __all__ = [
@@ -139,3 +136,80 @@ def make_prompt3_sections(readings_html: str, reflection_text: str) -> tuple[Lis
     for s in secs:
         out.append(Prompt3Section(heading=s.label, reading=s.text, context=None, exegesis=None, questions=[]))
     return out, reflection_text
+
+
+def _normalize_heading(text: str) -> str:
+    t = text.strip()
+    lower = t.lower()
+    # Map common USCCB headings
+    if lower.startswith("first reading"):
+        return "Reading 1"
+    if lower.startswith("second reading"):
+        return "Reading 2"
+    if lower.startswith("third reading"):
+        return "Reading 3"
+    if lower.startswith("responsorial psalm"):
+        return "Responsorial Psalm"
+    if lower.startswith("gospel"):
+        return "Gospel"
+    if lower.startswith("sequence"):
+        return "Sequence"
+    if lower.startswith("reading"):
+        return t
+    return t
+
+
+def parse_usccb_html(html_text: str) -> List[Section]:
+    """Parse live USCCB HTML into a list of Sections.
+
+    Uses BeautifulSoup to locate headings (h2/h3) and collect following
+    paragraphs until the next heading. The first paragraph is treated as the
+    citation; the rest are joined as the reading text.
+    """
+
+    try:
+        from bs4 import BeautifulSoup  # type: ignore[import-untyped]
+    except Exception:
+        # Fallback parser compatible with fixtures
+        return extract_sections(html_text)
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    # Heuristic: search inside main content if present
+    container = soup.find("main") or soup.body or soup
+
+    sections: List[Section] = []
+    current: Section | None = None
+    body_lines: List[str] = []
+    expecting_citation = False
+
+    # Iterate over tags, capturing h2/h3 and subsequent p tags
+    for tag in container.find_all(["h2", "h3", "p", "div"], recursive=True):
+        name = tag.name or ""
+        if name in ("h2", "h3"):
+            heading_text = _normalize_heading(tag.get_text(" ", strip=True))
+            if sections or current is not None:
+                if current is not None:
+                    current.text = "\n".join(body_lines).strip()
+                    sections.append(current)
+                current = None
+                body_lines = []
+            is_psalm = heading_text.lower().startswith("responsorial psalm")
+            is_gospel = heading_text.lower().startswith("gospel")
+            current = Section(heading_text, "", "", is_psalm, is_gospel)
+            expecting_citation = True
+            continue
+        if name == "p" and current is not None:
+            text = tag.get_text(" ", strip=True)
+            if not text:
+                continue
+            if expecting_citation:
+                current.citation = text
+                expecting_citation = False
+            else:
+                body_lines.append(text)
+
+    if current is not None:
+        current.text = "\n".join(body_lines).strip()
+        sections.append(current)
+
+    return sections
