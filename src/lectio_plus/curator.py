@@ -60,6 +60,10 @@ def safe_parse_art_json(text: str) -> dict[str, str]:
     obj_text = match.group(0)
 
     data = json.loads(obj_text)
+    if isinstance(data, list):
+        data = next((item for item in data if isinstance(item, dict)), None)
+        if data is None:
+            raise ValueError("no object in list")
     required = ["title", "artist", "year", "image_url"]
     out: dict[str, str] = {}
     for key in required:

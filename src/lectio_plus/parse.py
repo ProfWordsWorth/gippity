@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import List
+from .html_build import Section as Prompt3Section
 
 
 @dataclass
@@ -122,5 +123,19 @@ __all__ = [
     "Section",
     "extract_sections",
     "build_readings_block",
+    "make_prompt3_sections",
 ]
 
+
+def make_prompt3_sections(readings_html: str, reflection_text: str) -> tuple[List[Prompt3Section], str]:
+    """Build Prompt‑3 sections and return them with the final reflection.
+
+    Uses the extracted USCCB sections for headings and reading bodies. The
+    ``reflection_text`` is returned unchanged; callers may sanitize it further.
+    """
+
+    secs = extract_sections(readings_html)
+    out: List[Prompt3Section] = []
+    for s in secs:
+        out.append(Prompt3Section(heading=s.label, reading=s.text, context=None, exegesis=None, questions=[]))
+    return out, reflection_text
