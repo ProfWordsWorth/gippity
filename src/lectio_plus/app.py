@@ -16,6 +16,11 @@ from .html_build import build_html
 from .parse import parse_usccb_html
 
 
+def _ollama_timeout() -> float:
+    """Return Ollama timeout in seconds (default 120, override via OLLAMA_TIMEOUT)."""
+    return float(os.getenv("OLLAMA_TIMEOUT", "120"))
+
+
 class LLM(Protocol):
     """Minimal interface implemented by language model providers."""
 
@@ -66,11 +71,7 @@ class OpenAILLM:
     ) -> str:
         from openai import OpenAI  # type: ignore[import-not-found]
 
-        client = OpenAI(
-            base_url=self._base_url,
-            api_key=self._api_key,
-            timeout=10.0,
-        )
+        client = OpenAI(base_url=self._base_url, api_key=self._api_key, timeout=10.0)
 
         provider = os.environ.get("LLM_PROVIDER")
         base_url = os.environ.get("OPENAI_BASE_URL") or self._base_url or ""
@@ -81,22 +82,30 @@ class OpenAILLM:
         )
 
         if is_ollama:
+            # Recreate client for Ollama with configurable timeout
+            chat_client = OpenAI(
+                base_url=base_url,
+                api_key=self._api_key,
+                timeout=_ollama_timeout(),
+            )
             msgs: list[dict[str, str]] = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
             ]
             if max_tokens is None:
-                resp_chat = client.chat.completions.create(
+                resp_chat = chat_client.chat.completions.create(
                     model=model,
                     messages=cast(Any, msgs),
                     temperature=temperature,
+                    timeout=_ollama_timeout(),
                 )
             else:
-                resp_chat = client.chat.completions.create(
+                resp_chat = chat_client.chat.completions.create(
                     model=model,
                     messages=cast(Any, msgs),
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    timeout=_ollama_timeout(),
                 )
             return resp_chat.choices[0].message.content or ""
 
